@@ -1,0 +1,13 @@
+[package]
+name = "halfmoon"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+libmoon = { path = "../libmoon" }
+crossterm = "0.29.0"
+edtui = "0.9.9"
+ratatui = "0.29.0"
+tui-widget-list = "0.13.2"
+env_logger = "0.11.8"
+log = "0.4.29"
