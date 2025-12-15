@@ -1,16 +1,21 @@
-use edtui::{EditorEventHandler, EditorState, EditorTheme, EditorView};
-use libmoon::chat::Chat;
+use crossterm::event::{Event, KeyCode, KeyEvent};
+use libmoon::{
+    chat::{Chat, ChatUpdate},
+    persona::Persona,
+};
 use ratatui::{
-    crossterm::event::{KeyCode, KeyEvent},
     layout::{Constraint, Layout},
-    prelude::Widget,
     style::Style,
     text::Line,
-    widgets::{Block, Paragraph, StatefulWidget, Wrap},
+    widgets::{Block, Borders, Paragraph, StatefulWidget, Wrap},
 };
+use tokio::sync::mpsc;
 use tui_widget_list::{ListBuilder, ListState, ListView};
 
-use crate::AppCommand;
+use crate::{
+    AppCommand,
+    editor_widget::{EditorState, EditorWidget},
+};
 
 enum InputMode {
     Normal,
@@ -18,10 +23,10 @@ enum InputMode {
 }
 
 pub struct ChatState {
-    pub chat: Chat,
+    chat: Chat,
     input_mode: InputMode,
     list_state: ListState,
-    input_state: EditorState,
+    editor_state: EditorState,
 }
 
 impl ChatState {
@@ -35,39 +40,38 @@ impl ChatState {
             chat,
             input_mode: InputMode::Normal,
             list_state,
-            input_state: EditorState::default(),
+            editor_state: EditorState::default(),
         }
     }
 
-    pub fn test(&mut self, key: KeyEvent) -> AppCommand {
-        match self.input_mode {
-            InputMode::Normal => match key.code {
-                KeyCode::Char('i') => {
-                    self.input_mode = InputMode::Editing;
-                }
-                KeyCode::Esc => return AppCommand::Quit,
-                _ => self.update(&key),
-            },
-            InputMode::Editing => {
-                if self.input_state.mode == edtui::EditorMode::Normal {
-                    match key.code {
-                        KeyCode::Esc => self.input_mode = InputMode::Normal,
-                        KeyCode::Enter => {
-                            let message: String = self
-                                .input_state
-                                .lines
-                                .flatten(&Some('\n'))
-                                .into_iter()
-                                .collect();
-                            self.chat.add_user_message(message);
-                            self.input_state = EditorState::default();
-                        }
-                        _ => (),
+    pub fn set_char(&mut self, char: Persona) {
+        let user = self.chat.user();
+        let settings = self.chat.settings();
+        self.chat = Chat::with_personas(user, char, settings.clone())
+    }
+
+    pub fn get_rx(&mut self) -> mpsc::Receiver<ChatUpdate> {
+        self.chat.get_rx()
+    }
+
+    pub fn input(&mut self, event: Event) -> AppCommand {
+        if let Event::Key(key) = event {
+            match self.input_mode {
+                InputMode::Normal => match key.code {
+                    KeyCode::Enter => {
+                        self.chat.add_user_message(self.editor_state.text());
+                        self.editor_state = EditorState::default();
+                    }
+                    KeyCode::Char('i') => self.input_mode = InputMode::Editing,
+                    KeyCode::Char('s') => return AppCommand::ToggleSelection,
+                    KeyCode::Esc => return AppCommand::Quit,
+                    _ => self.update(&key),
+                },
+                InputMode::Editing => {
+                    if self.editor_state.input(event) {
+                        self.input_mode = InputMode::Normal;
                     }
                 }
-
-                let mut event_handler = EditorEventHandler::default();
-                event_handler.on_key_event(key, &mut self.input_state)
             }
         }
         AppCommand::None
@@ -91,11 +95,11 @@ impl ChatState {
 
         let builder = ListBuilder::new(|context| {
             let style = match context.is_selected {
-                true => Style::new(),
-                false => Style::new().bg(ratatui::style::Color::Red),
+                true => Style::new().fg(ratatui::style::Color::Red),
+                false => Style::new(),
             };
 
-            let title = Line::from(self.chat.owner_name(&messages[context.index]));
+            let title = Line::from(self.chat.owner_name(&messages[context.index])).centered();
             let structure = Line::from(format!(
                 "{}/{}",
                 structure[context.index].0, structure[context.index].1
@@ -103,8 +107,13 @@ impl ChatState {
             .right_aligned();
             let item = Paragraph::new(messages[context.index].text.clone())
                 .wrap(Wrap { trim: true })
-                .block(Block::bordered().title(title).title(structure))
-                .style(style);
+                .block(
+                    Block::bordered()
+                        .borders(Borders::TOP)
+                        .border_style(style)
+                        .title(title)
+                        .title(structure),
+                );
 
             let main_axis_size = item.line_count(area.width - 2) as u16;
             (item, main_axis_size)
@@ -116,20 +125,6 @@ impl ChatState {
             .block(Block::new().title(self.chat.title()));
 
         list.render(area, buf, &mut self.list_state);
-    }
-
-    fn render_input(&mut self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer) {
-        let theme = match self.input_mode {
-            InputMode::Normal => EditorTheme::default()
-                .block(Block::bordered())
-                .hide_cursor(),
-            InputMode::Editing => EditorTheme::default().block(Block::bordered()),
-        };
-
-        EditorView::new(&mut self.input_state)
-            .theme(theme)
-            .wrap(true)
-            .render(area, buf);
     }
 }
 
@@ -148,8 +143,6 @@ impl StatefulWidget for ChatWidget {
         let vertical = Layout::vertical([Constraint::Min(1), Constraint::Length(5)]);
         let [messages_area, input_area] = vertical.areas(area);
         state.render_list(messages_area, buf);
-        state.render_input(input_area, buf);
+        EditorWidget::default().render(input_area, buf, &mut state.editor_state);
     }
 }
-
-impl ChatWidget {}
