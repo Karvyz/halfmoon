@@ -15,7 +15,7 @@ use tui_widget_list::{ListBuilder, ListState, ListView};
 
 use crate::{
     AppCommand,
-    editor_widget::{EditorState, EditorWidget},
+    editor_widget::{EditorState, EditorUnfocused, EditorWidget},
 };
 
 enum InputMode {
@@ -170,6 +170,13 @@ impl StatefulWidget for ChatWidget {
         let vertical = Layout::vertical([Constraint::Min(1), Constraint::Length(5)]);
         let [messages_area, input_area] = vertical.areas(area);
         state.render_list(messages_area, buf);
-        EditorWidget::default().render(input_area, buf, &mut state.editor_state);
+        match state.input_mode {
+            InputMode::Normal => {
+                EditorUnfocused::default().render(input_area, buf, &mut state.editor_state)
+            }
+            InputMode::Editing => {
+                EditorWidget::default().render(input_area, buf, &mut state.editor_state)
+            }
+        };
     }
 }

@@ -20,7 +20,7 @@ enum Mode {
 impl Mode {
     fn block<'a>(&self) -> Block<'a> {
         let help = match self {
-            Self::Normal => "type q to quit, type i to enter insert mode",
+            Self::Normal => "type Esc to quit, type i to enter insert mode",
             Self::Insert => "type Esc to back to normal mode",
             Self::Visual => "type y to yank, type d to delete, type Esc to back to normal mode",
             Self::Operator(_) => "move cursor to apply operator",
@@ -29,7 +29,7 @@ impl Mode {
         Block::default().borders(Borders::ALL).title(title)
     }
 
-    fn cursor_style(&self) -> Style {
+    fn focused_cursor_style(&self) -> Style {
         let color = match self {
             Self::Normal => Color::Reset,
             Self::Insert => Color::LightBlue,
@@ -37,6 +37,10 @@ impl Mode {
             Self::Operator(_) => Color::LightGreen,
         };
         Style::default().fg(color).add_modifier(Modifier::REVERSED)
+    }
+
+    fn unfocused_cursor_style(&self) -> Style {
+        Style::default()
     }
 }
 
@@ -69,7 +73,7 @@ impl Default for EditorState {
         let mode = Mode::default();
         let mut editor = TextArea::default();
         editor.set_block(mode.block());
-        editor.set_cursor_style(mode.cursor_style());
+        editor.set_cursor_style(mode.focused_cursor_style());
         Self {
             editor,
             mode,
@@ -83,7 +87,7 @@ impl EditorState {
         match self.transition(event.into()) {
             Transition::Mode(mode) if self.mode != mode => {
                 self.editor.set_block(mode.block());
-                self.editor.set_cursor_style(mode.cursor_style());
+                self.editor.set_cursor_style(mode.focused_cursor_style());
                 self.mode = mode;
                 self.pending = Input::default();
             }
@@ -246,10 +250,9 @@ impl EditorState {
                         self.editor.move_cursor(CursorMove::Head);
                         return Transition::Mode(Mode::Insert);
                     }
-                    Input {
-                        key: Key::Char('q'),
-                        ..
-                    } => return Transition::Quit,
+                    Input { key: Key::Esc, .. } if self.mode == Mode::Normal => {
+                        return Transition::Quit;
+                    }
                     Input {
                         key: Key::Char('e'),
                         ctrl: true,
@@ -424,6 +427,28 @@ impl StatefulWidget for EditorWidget {
         buf: &mut ratatui::prelude::Buffer,
         state: &mut Self::State,
     ) {
+        state
+            .editor
+            .set_cursor_style(state.mode.focused_cursor_style());
+        state.editor.render(area, buf);
+    }
+}
+
+#[derive(Default)]
+pub struct EditorUnfocused {}
+
+impl StatefulWidget for EditorUnfocused {
+    type State = EditorState;
+
+    fn render(
+        self,
+        area: ratatui::prelude::Rect,
+        buf: &mut ratatui::prelude::Buffer,
+        state: &mut Self::State,
+    ) {
+        state
+            .editor
+            .set_cursor_style(state.mode.unfocused_cursor_style());
         state.editor.render(area, buf);
     }
 }
