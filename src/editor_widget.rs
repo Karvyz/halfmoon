@@ -8,8 +8,6 @@ use ratatui::{
 };
 use tui_textarea::{CursorMove, Input, Key, Scrolling, TextArea};
 
-use crate::AppCommand;
-
 #[derive(PartialEq, Default)]
 enum Mode {
     #[default]

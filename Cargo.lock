@@ -1404,6 +1404,7 @@ dependencies = [
  "image",
  "llm",
  "log",
+ "regex",
  "serde",
  "serde_json",
  "tokio",

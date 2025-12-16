@@ -1,12 +1,13 @@
 use crossterm::event::{Event, KeyCode, KeyEvent};
 use libmoon::{
     chat::{Chat, ChatUpdate},
+    message::Message,
     persona::Persona,
 };
 use ratatui::{
     layout::{Constraint, Layout},
-    style::Style,
-    text::Line,
+    style::{Color, Style},
+    text::{Line, Span},
     widgets::{Block, Borders, Paragraph, StatefulWidget, Wrap},
 };
 use tokio::sync::mpsc;
@@ -94,27 +95,12 @@ impl ChatState {
         let structure = self.chat.get_history_structure();
 
         let builder = ListBuilder::new(|context| {
-            let style = match context.is_selected {
-                true => Style::new().fg(ratatui::style::Color::Red),
-                false => Style::new(),
-            };
-
-            let title = Line::from(self.chat.owner_name(&messages[context.index])).centered();
-            let structure = Line::from(format!(
-                "{}/{}",
-                structure[context.index].0, structure[context.index].1
-            ))
-            .right_aligned();
-            let item = Paragraph::new(messages[context.index].text.clone())
-                .wrap(Wrap { trim: true })
-                .block(
-                    Block::bordered()
-                        .borders(Borders::TOP)
-                        .border_style(style)
-                        .title(title)
-                        .title(structure),
-                );
-
+            let item = Self::paragraph(
+                &messages[context.index],
+                self.chat.owner_name(&messages[context.index]).to_string(),
+                structure[context.index],
+                context.is_selected,
+            );
             let main_axis_size = item.line_count(area.width - 2) as u16;
             (item, main_axis_size)
         });
@@ -125,6 +111,47 @@ impl ChatState {
             .block(Block::new().title(self.chat.title()));
 
         list.render(area, buf, &mut self.list_state);
+    }
+
+    fn paragraph(
+        message: &Message,
+        owner: String,
+        structure: (usize, usize),
+        selected: bool,
+    ) -> Paragraph<'_> {
+        let style = match selected {
+            true => Style::new().fg(ratatui::style::Color::Red),
+            false => Style::new(),
+        };
+
+        let title = Line::from(owner).centered();
+        let structure = Line::from(format!("{}/{}", structure.0, structure.1)).right_aligned();
+        let mut lines = vec![];
+        for l in message.spans() {
+            let spans: Vec<Span> = l
+                .into_iter()
+                .map(|(text, style)| Span::from(text).style(Self::color(style)))
+                .collect();
+            lines.push(Line::from(spans));
+            lines.push(Line::from(""));
+        }
+        Paragraph::new(lines).wrap(Wrap { trim: true }).block(
+            Block::bordered()
+                .borders(Borders::TOP)
+                .border_style(style)
+                .title(title)
+                .title(structure),
+        )
+    }
+
+    fn color(style: libmoon::message::Style) -> Style {
+        let color = match style {
+            libmoon::message::Style::Normal => Color::White,
+            libmoon::message::Style::Strong => Color::Blue,
+            libmoon::message::Style::Quote => Color::Red,
+            libmoon::message::Style::StrongQuote => Color::Green,
+        };
+        Style::default().fg(color)
     }
 }
 
