@@ -85,6 +85,7 @@ impl ChatState {
                 KeyCode::Char('j') => self.list_state.next(),
                 KeyCode::Char('k') => self.list_state.previous(),
                 KeyCode::Char('l') => self.chat.next(s),
+                KeyCode::Char('d') => self.chat.delete(s),
                 _ => (),
             }
         }
@@ -108,6 +109,7 @@ impl ChatState {
         let item_count = messages.len();
         let list = ListView::new(builder, item_count)
             .scroll_axis(tui_widget_list::ScrollAxis::Vertical)
+            .infinite_scrolling(false)
             .block(Block::new().title(self.chat.title()));
 
         list.render(area, buf, &mut self.list_state);
