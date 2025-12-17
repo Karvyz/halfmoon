@@ -59,6 +59,7 @@ enum Transition {
     Nop,
     Mode(Mode),
     Pending(Input),
+    Ok,
     Quit,
 }
 
@@ -70,8 +71,20 @@ pub struct EditorState {
 
 impl Default for EditorState {
     fn default() -> Self {
+        Self::new(String::new())
+    }
+}
+
+pub enum EditorResult {
+    None,
+    Ok,
+    Quit,
+}
+
+impl EditorState {
+    pub fn new(text: String) -> Self {
         let mode = Mode::default();
-        let mut editor = TextArea::default();
+        let mut editor = TextArea::from(text.split('\n'));
         editor.set_block(mode.block());
         editor.set_cursor_style(mode.focused_cursor_style());
         Self {
@@ -80,10 +93,8 @@ impl Default for EditorState {
             pending: Default::default(),
         }
     }
-}
 
-impl EditorState {
-    pub fn input(&mut self, event: Event) -> bool {
+    pub fn input(&mut self, event: Event) -> EditorResult {
         match self.transition(event.into()) {
             Transition::Mode(mode) if self.mode != mode => {
                 self.editor.set_block(mode.block());
@@ -93,15 +104,17 @@ impl EditorState {
             }
             Transition::Nop | Transition::Mode(_) => (),
             Transition::Pending(input) => self.pending = input,
-            Transition::Quit => return true,
+            Transition::Ok => return EditorResult::Ok,
+            Transition::Quit => return EditorResult::Quit,
         }
-        false
+        EditorResult::None
     }
 
     pub fn text(&self) -> String {
         let mut total = String::new();
         for s in self.editor.lines() {
             total.push_str(s);
+            total.push('\n');
         }
         total
     }
@@ -252,6 +265,11 @@ impl EditorState {
                     }
                     Input { key: Key::Esc, .. } if self.mode == Mode::Normal => {
                         return Transition::Quit;
+                    }
+                    Input {
+                        key: Key::Enter, ..
+                    } if self.mode == Mode::Normal => {
+                        return Transition::Ok;
                     }
                     Input {
                         key: Key::Char('e'),
