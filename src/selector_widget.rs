@@ -1,8 +1,8 @@
 use crossterm::event::{Event, KeyCode};
 use libmoon::persona::{self, Persona};
 use ratatui::{
-    text::Line,
-    widgets::{Block, StatefulWidget},
+    style::Style,
+    widgets::{Block, Borders, Paragraph, StatefulWidget},
 };
 use tui_widget_list::{ListBuilder, ListState, ListView};
 
@@ -57,12 +57,19 @@ impl StatefulWidget for SelectorWidget {
         state: &mut Self::State,
     ) {
         let builder = ListBuilder::new(|context| {
-            let item = Line::from(state.personas[context.index].name());
+            let style = match context.is_selected {
+                true => Style::new().fg(ratatui::style::Color::Red),
+                false => Style::new(),
+            };
+
+            let item = Paragraph::new(state.personas[context.index].name())
+                .block(Block::bordered().borders(Borders::TOP))
+                .style(style);
             (item, 3)
         });
         let list = ListView::new(builder, state.personas.len())
             .scroll_axis(tui_widget_list::ScrollAxis::Vertical)
-            .block(Block::new());
+            .block(Block::bordered().title("Character selector"));
         list.render(area, buf, &mut state.list_state);
     }
 }
