@@ -49,7 +49,9 @@ impl ChatState {
     pub fn set_char(&mut self, char: Persona) {
         let user = self.chat.user();
         let settings = self.chat.settings();
-        self.chat = Chat::with_personas(user, char, settings.clone())
+        let tx = self.chat.tx.clone();
+        self.chat = Chat::with_personas(user, char, settings.clone());
+        self.chat.tx = tx;
     }
 
     pub fn get_rx(&mut self) -> mpsc::Receiver<ChatUpdate> {
