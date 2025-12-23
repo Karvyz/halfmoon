@@ -93,10 +93,10 @@ impl ChatState {
     pub fn update(&mut self, event: &KeyEvent) {
         if let Some(s) = self.list_state.selected {
             match event.code {
-                KeyCode::Char('h') => self.chat.previous(s),
-                KeyCode::Char('j') => self.list_state.next(),
-                KeyCode::Char('k') => self.list_state.previous(),
-                KeyCode::Char('l') => self.chat.next(s),
+                KeyCode::Char('h') | KeyCode::Left => self.chat.previous(s),
+                KeyCode::Char('j') | KeyCode::Down => self.list_state.next(),
+                KeyCode::Char('k') | KeyCode::Up => self.list_state.previous(),
+                KeyCode::Char('l') | KeyCode::Right => self.chat.next(s),
                 KeyCode::Char('d') => self.chat.delete(s),
                 KeyCode::Char('e') => {
                     let history = self.chat.get_history();
