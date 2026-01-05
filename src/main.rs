@@ -55,7 +55,7 @@ impl App {
             terminal.draw(|frame| self.draw(frame))?;
             select! {
                 Some(event) = self.event_stream.next() => self.input(event?),
-                Some(_) = self.chat_rx.recv() => {}
+                Some(s) = self.chat_rx.recv() => self.chat_state.update_status(s)
             };
 
             if self.exit {

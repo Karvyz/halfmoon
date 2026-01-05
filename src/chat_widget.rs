@@ -5,7 +5,7 @@ use libmoon::{
     persona::Persona,
 };
 use ratatui::{
-    layout::{Constraint, Layout},
+    layout::{Alignment, Constraint, Layout},
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, StatefulWidget, Wrap},
@@ -29,6 +29,7 @@ pub struct ChatState {
     input_mode: InputMode,
     list_state: ListState,
     editor_state: EditorState,
+    status: Option<ChatUpdate>,
 }
 
 impl ChatState {
@@ -43,6 +44,7 @@ impl ChatState {
             input_mode: InputMode::Normal,
             list_state,
             editor_state: EditorState::default(),
+            status: None,
         }
     }
 
@@ -56,6 +58,10 @@ impl ChatState {
 
     pub fn get_rx(&mut self) -> mpsc::Receiver<ChatUpdate> {
         self.chat.get_rx()
+    }
+
+    pub fn update_status(&mut self, status: ChatUpdate) {
+        self.status = Some(status)
     }
 
     pub fn input(&mut self, event: Event) -> AppCommand {
@@ -126,11 +132,22 @@ impl ChatState {
             (item, main_axis_size)
         });
 
+        let status = Line::from(match &self.status {
+            Some(status) => match status {
+                ChatUpdate::RequestSent => "Waiting",
+                ChatUpdate::RequestOk => "OK",
+                ChatUpdate::StreamUpdate => "Streaming",
+                ChatUpdate::StreamFinished => "Done",
+                ChatUpdate::RequestError(_) => "Error",
+            },
+            None => "",
+        })
+        .alignment(Alignment::Right);
         let item_count = messages.len();
         let list = ListView::new(builder, item_count)
             .scroll_axis(tui_widget_list::ScrollAxis::Vertical)
             .infinite_scrolling(false)
-            .block(Block::new().title(self.chat.title()));
+            .block(Block::bordered().title(self.chat.title()).title(status));
 
         list.render(area, buf, &mut self.list_state);
     }
