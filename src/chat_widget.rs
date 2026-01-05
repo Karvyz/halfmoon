@@ -8,7 +8,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Layout},
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, StatefulWidget, Wrap},
+    widgets::{Block, Borders, Paragraph, StatefulWidget, Widget, Wrap},
 };
 use tokio::sync::mpsc;
 use tui_widget_list::{ListBuilder, ListState, ListView};
@@ -18,15 +18,16 @@ use crate::{
     editor_widget::{EditorResult, EditorState, EditorUnfocused, EditorWidget},
 };
 
-enum InputMode {
+enum Mode {
     Normal,
     Editing(Box<EditorState>),
     Inputing,
+    Quiting,
 }
 
 pub struct ChatState {
     chat: Chat,
-    input_mode: InputMode,
+    input_mode: Mode,
     list_state: ListState,
     editor_state: EditorState,
     status: Option<ChatUpdate>,
@@ -41,7 +42,7 @@ impl ChatState {
         }
         ChatState {
             chat,
-            input_mode: InputMode::Normal,
+            input_mode: Mode::Normal,
             list_state,
             editor_state: EditorState::default(),
             status: None,
@@ -67,29 +68,33 @@ impl ChatState {
     pub fn input(&mut self, event: Event) -> AppCommand {
         if let Event::Key(key) = event {
             match &mut self.input_mode {
-                InputMode::Normal => match key.code {
-                    KeyCode::Char('i') => self.input_mode = InputMode::Inputing,
+                Mode::Normal => match key.code {
+                    KeyCode::Char('i') => self.input_mode = Mode::Inputing,
                     KeyCode::Char('s') => return AppCommand::ToggleSelection,
-                    KeyCode::Esc => return AppCommand::Quit,
+                    KeyCode::Esc => self.input_mode = Mode::Quiting,
                     _ => self.update(&key),
                 },
-                InputMode::Inputing => match self.editor_state.input(event) {
+                Mode::Inputing => match self.editor_state.input(event) {
                     EditorResult::Ok => {
                         self.chat.add_user_message(self.editor_state.text());
                         self.editor_state = EditorState::default();
-                        self.input_mode = InputMode::Normal;
+                        self.input_mode = Mode::Normal;
                     }
-                    EditorResult::Quit => self.input_mode = InputMode::Normal,
+                    EditorResult::Quit => self.input_mode = Mode::Normal,
                     _ => (),
                 },
-                InputMode::Editing(editor_state) => match editor_state.input(event) {
+                Mode::Editing(editor_state) => match editor_state.input(event) {
                     EditorResult::Ok => {
                         self.chat
                             .add_edit(self.list_state.selected.unwrap_or(0), editor_state.text());
-                        self.input_mode = InputMode::Normal;
+                        self.input_mode = Mode::Normal;
                     }
-                    EditorResult::Quit => self.input_mode = InputMode::Normal,
+                    EditorResult::Quit => self.input_mode = Mode::Normal,
                     _ => (),
+                },
+                Mode::Quiting => match key.code {
+                    KeyCode::Enter => return AppCommand::Quit,
+                    _ => self.input_mode = Mode::Normal,
                 },
             }
         }
@@ -109,7 +114,7 @@ impl ChatState {
                     let selected = self.list_state.selected.unwrap_or(0);
                     if history.len() > selected {
                         let edit_text = history[selected].text.clone();
-                        self.input_mode = InputMode::Editing(Box::new(EditorState::new(edit_text)))
+                        self.input_mode = Mode::Editing(Box::new(EditorState::new(edit_text)))
                     }
                 }
                 _ => (),
@@ -206,18 +211,26 @@ impl StatefulWidget for ChatWidget {
         buf: &mut ratatui::prelude::Buffer,
         state: &mut Self::State,
     ) {
-        if let InputMode::Editing(e) = &mut state.input_mode {
-            EditorWidget::default().render(area, buf, e)
-        } else {
-            let vertical = Layout::vertical([Constraint::Min(1), Constraint::Length(5)]);
-            let [messages_area, input_area] = vertical.areas(area);
-            state.render_list(messages_area, buf);
-            match state.input_mode {
-                InputMode::Inputing => {
-                    EditorWidget::default().render(input_area, buf, &mut state.editor_state)
-                }
-                _ => EditorUnfocused::default().render(input_area, buf, &mut state.editor_state),
-            };
-        }
+        match &mut state.input_mode {
+            Mode::Editing(editor_state) => EditorWidget::default().render(area, buf, editor_state),
+            Mode::Quiting => {
+                Line::from("Quit? (Enter)")
+                    .alignment(Alignment::Center)
+                    .render(area, buf);
+            }
+            _ => {
+                let vertical = Layout::vertical([Constraint::Min(1), Constraint::Length(5)]);
+                let [messages_area, input_area] = vertical.areas(area);
+                state.render_list(messages_area, buf);
+                match state.input_mode {
+                    Mode::Inputing => {
+                        EditorWidget::default().render(input_area, buf, &mut state.editor_state)
+                    }
+                    _ => {
+                        EditorUnfocused::default().render(input_area, buf, &mut state.editor_state)
+                    }
+                };
+            }
+        };
     }
 }
