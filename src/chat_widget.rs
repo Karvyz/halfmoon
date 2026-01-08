@@ -108,7 +108,12 @@ impl ChatState {
                 KeyCode::Char('j') | KeyCode::Down => self.list_state.next(),
                 KeyCode::Char('k') | KeyCode::Up => self.list_state.previous(),
                 KeyCode::Char('l') | KeyCode::Right => self.chat.next(s),
-                KeyCode::Char('d') => self.chat.delete(s),
+                KeyCode::Char('d') => {
+                    self.chat.delete(s);
+                    if self.chat.get_history().len() == s {
+                        self.list_state.previous();
+                    }
+                }
                 KeyCode::Char('e') => {
                     let history = self.chat.get_history();
                     let selected = self.list_state.selected.unwrap_or(0);
