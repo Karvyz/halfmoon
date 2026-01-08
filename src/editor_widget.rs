@@ -67,11 +67,12 @@ pub struct EditorState {
     editor: TextArea<'static>,
     mode: Mode,
     pending: Input, // Pending input to handle a sequence with two keys like gg
+    single_line: bool,
 }
 
 impl Default for EditorState {
     fn default() -> Self {
-        Self::new(String::new())
+        Self::new(String::new(), false)
     }
 }
 
@@ -82,7 +83,7 @@ pub enum EditorResult {
 }
 
 impl EditorState {
-    pub fn new(text: String) -> Self {
+    pub fn new(text: String, single_line: bool) -> Self {
         let mode = Mode::default();
         let mut editor = TextArea::from(text.split('\n'));
         editor.set_block(mode.block());
@@ -91,6 +92,7 @@ impl EditorState {
             editor,
             mode,
             pending: Default::default(),
+            single_line,
         }
     }
 
@@ -117,6 +119,10 @@ impl EditorState {
             total.push('\n');
         }
         total
+    }
+
+    pub fn insert_mode(&mut self) {
+        self.mode = Mode::Insert
     }
 
     fn transition(&mut self, input: Input) -> Transition {
@@ -424,6 +430,9 @@ impl EditorState {
                     ctrl: true,
                     ..
                 } => Transition::Mode(Mode::Normal),
+                Input {
+                    key: Key::Enter, ..
+                } if self.single_line => Transition::Ok,
                 input => {
                     self.editor.input(input); // Use default key mappings in insert mode
                     Transition::Mode(Mode::Insert)

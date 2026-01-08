@@ -33,7 +33,7 @@ impl SelectorState {
             personas,
             list_state,
             searching: false,
-            search_bar: EditorState::default(),
+            search_bar: EditorState::new(String::new(), true),
         }
     }
 
@@ -64,7 +64,10 @@ impl SelectorState {
             false => {
                 if let Event::Key(key) = event {
                     match key.code {
-                        KeyCode::Char('s') => self.searching = true,
+                        KeyCode::Char('i') => {
+                            self.searching = true;
+                            self.search_bar.insert_mode();
+                        }
                         KeyCode::Esc => return AppCommand::ToggleSelection,
                         _ => (),
                     }

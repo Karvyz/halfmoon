@@ -114,7 +114,8 @@ impl ChatState {
                     let selected = self.list_state.selected.unwrap_or(0);
                     if history.len() > selected {
                         let edit_text = history[selected].text.clone();
-                        self.input_mode = Mode::Editing(Box::new(EditorState::new(edit_text)))
+                        self.input_mode =
+                            Mode::Editing(Box::new(EditorState::new(edit_text, false)))
                     }
                 }
                 _ => (),
