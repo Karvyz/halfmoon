@@ -49,7 +49,10 @@ impl SelectorState {
                 self.filtered_personas = self
                     .personas
                     .iter()
-                    .filter(|s| s.name().to_lowercase().contains(&text))
+                    .filter(|s| {
+                        s.name().to_lowercase().contains(&text)
+                            | s.system_prompt(None).to_lowercase().contains(&text)
+                    })
                     .cloned()
                     .collect();
                 match self.filtered_personas.is_empty() {
