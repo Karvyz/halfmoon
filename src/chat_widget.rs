@@ -31,6 +31,7 @@ pub struct ChatState {
     list_state: ListState,
     editor_state: EditorState,
     status: Option<ChatUpdate>,
+    borders: bool,
 }
 
 impl ChatState {
@@ -46,6 +47,7 @@ impl ChatState {
             list_state,
             editor_state: EditorState::default(),
             status: None,
+            borders: true,
         }
     }
 
@@ -70,6 +72,7 @@ impl ChatState {
             match &mut self.input_mode {
                 Mode::Normal => match key.code {
                     KeyCode::Char('i') => self.input_mode = Mode::Inputing,
+                    KeyCode::Char('b') => self.borders = !self.borders,
                     KeyCode::Char('s') => return AppCommand::ToggleSelection,
                     KeyCode::Esc => self.input_mode = Mode::Quiting,
                     _ => self.update(&key),
@@ -155,10 +158,19 @@ impl ChatState {
         })
         .alignment(Alignment::Right);
         let item_count = messages.len();
+        let borders = match self.borders {
+            true => Borders::all(),
+            false => Borders::TOP,
+        };
         let list = ListView::new(builder, item_count)
             .scroll_axis(tui_widget_list::ScrollAxis::Vertical)
             .infinite_scrolling(false)
-            .block(Block::bordered().title(self.chat.title()).title(status));
+            .block(
+                Block::bordered()
+                    .borders(borders)
+                    .title(self.chat.title())
+                    .title(status),
+            );
 
         list.render(area, buf, &mut self.list_state);
     }
