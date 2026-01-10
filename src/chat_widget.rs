@@ -1,3 +1,4 @@
+use arboard::Clipboard;
 use crossterm::event::{Event, KeyCode, KeyEvent};
 use libmoon::{
     chat::{Chat, ChatUpdate},
@@ -30,7 +31,7 @@ pub struct ChatState {
     input_mode: Mode,
     list_state: ListState,
     editor_state: EditorState,
-    status: Option<ChatUpdate>,
+    status: Option<&'static str>,
     borders: bool,
 }
 
@@ -64,10 +65,17 @@ impl ChatState {
     }
 
     pub fn update_status(&mut self, status: ChatUpdate) {
-        self.status = Some(status)
+        self.status = Some(match status {
+            ChatUpdate::RequestSent => "Waiting",
+            ChatUpdate::RequestOk => "OK",
+            ChatUpdate::StreamUpdate => "Streaming",
+            ChatUpdate::StreamFinished => "Done",
+            ChatUpdate::RequestError(_) => "API Error",
+        })
     }
 
     pub fn input(&mut self, event: Event) -> AppCommand {
+        self.status = None;
         if let Event::Key(key) = event {
             match &mut self.input_mode {
                 Mode::Normal => match key.code {
@@ -111,6 +119,7 @@ impl ChatState {
                 KeyCode::Char('j') | KeyCode::Down => self.list_state.next(),
                 KeyCode::Char('k') | KeyCode::Up => self.list_state.previous(),
                 KeyCode::Char('l') | KeyCode::Right => self.chat.next(s),
+                KeyCode::Char('y') => self.message_to_clipboard(s),
                 KeyCode::Char('d') => {
                     self.chat.delete(s);
                     if self.chat.get_history().len() == s {
@@ -131,6 +140,16 @@ impl ChatState {
         }
     }
 
+    fn message_to_clipboard(&mut self, depth: usize) {
+        if let Ok(mut clipboard) = Clipboard::new() {
+            let history = self.chat.get_history();
+            match clipboard.set_text(history[depth].clean()) {
+                Ok(_) => self.status = Some("Yanked"),
+                Err(_) => self.status = Some("Copy error"),
+            }
+        }
+    }
+
     fn render_list(&mut self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer) {
         let messages = self.chat.get_history();
         let structure = self.chat.get_history_structure();
@@ -147,13 +166,7 @@ impl ChatState {
         });
 
         let status = Line::from(match &self.status {
-            Some(status) => match status {
-                ChatUpdate::RequestSent => "Waiting",
-                ChatUpdate::RequestOk => "OK",
-                ChatUpdate::StreamUpdate => "Streaming",
-                ChatUpdate::StreamFinished => "Done",
-                ChatUpdate::RequestError(_) => "Error",
-            },
+            Some(status) => status,
             None => "",
         })
         .alignment(Alignment::Right);
