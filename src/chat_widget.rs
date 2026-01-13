@@ -57,6 +57,10 @@ impl ChatState {
         let settings = self.chat.settings();
         let tx = self.chat.tx.clone();
         self.chat = Chat::with_personas(user, char, settings.clone());
+        match self.chat.get_history().is_empty() {
+            true => self.list_state.selected = None,
+            false => self.list_state.selected = Some(0),
+        }
         self.chat.tx = tx;
     }
 
