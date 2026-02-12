@@ -186,7 +186,7 @@ impl ChatState {
             false => Style::new(),
         };
 
-        let title = Line::from("TODO owner name").centered();
+        let title = Line::from(message.owner_name.clone()).centered();
         let structure = Line::from(format!("{}/{}", structure.0, structure.1)).right_aligned();
         let mut lines = vec![];
         for l in message.spans() {
