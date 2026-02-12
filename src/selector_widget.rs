@@ -1,5 +1,5 @@
 use crossterm::event::{Event, KeyCode};
-use libmoon::persona::{self, Persona};
+use libmoon::persona::Persona;
 use ratatui::{
     layout::{Constraint, Layout},
     style::Style,
@@ -22,8 +22,7 @@ pub struct SelectorState {
 }
 
 impl SelectorState {
-    pub fn load() -> Self {
-        let personas = persona::loader::load_chars();
+    pub fn new(personas: Vec<Persona>) -> Self {
         let mut list_state = ListState::default();
         if !personas.is_empty() {
             list_state.selected = Some(0)

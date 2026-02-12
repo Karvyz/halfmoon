@@ -2,9 +2,9 @@ use std::io;
 
 use crossterm::event::EventStream;
 use futures::StreamExt;
-use libmoon::{chat::ChatUpdate, persona::Persona};
+use libmoon::{moon::Moon, persona::Persona};
 use ratatui::{DefaultTerminal, Frame, crossterm::event::Event};
-use tokio::{select, sync::mpsc};
+use tokio::select;
 
 use crate::{
     chat_widget::{ChatState, ChatWidget},
@@ -31,18 +31,23 @@ enum AppCommand {
 }
 
 struct App {
+    moon: Moon,
     chat_state: ChatState,
     selector_state: Option<SelectorState>,
-    chat_rx: mpsc::Receiver<ChatUpdate>,
     event_stream: EventStream,
     exit: bool,
 }
 
 impl App {
     fn new() -> Self {
-        let mut chat_state = ChatState::load();
+        let moon = Moon::new();
+        let chat_state = ChatState::new(
+            moon.chat.title(),
+            moon.chat.get_history(),
+            moon.chat.get_history_structure(),
+        );
         Self {
-            chat_rx: chat_state.get_rx(),
+            moon,
             chat_state,
             selector_state: None,
             event_stream: EventStream::new(),
@@ -55,7 +60,7 @@ impl App {
             terminal.draw(|frame| self.draw(frame))?;
             select! {
                 Some(event) = self.event_stream.next() => self.input(event?),
-                Some(s) = self.chat_rx.recv() => self.chat_state.update_status(s)
+                mu = self.moon.recv() => self.chat_state.update_status(mu),
             };
 
             if self.exit {
@@ -67,18 +72,20 @@ impl App {
     fn input(&mut self, event: Event) {
         let command = match &mut self.selector_state {
             Some(selector_state) => selector_state.handle_input(event),
-            None => self.chat_state.input(event),
+            None => self.chat_state.input(event, &mut self.moon.chat),
         };
 
         match command {
             AppCommand::ToggleSelection => {
                 self.selector_state = match self.selector_state {
                     Some(_) => None,
-                    None => Some(SelectorState::load()),
+                    None => Some(SelectorState::new(
+                        self.moon.gateway.chars.blocking_lock().clone(),
+                    )),
                 }
             }
             AppCommand::CharSelection(persona) => {
-                self.chat_state.set_char(persona);
+                self.moon.set_chars(persona);
                 self.selector_state = None;
             }
             AppCommand::Quit => self.exit = true,

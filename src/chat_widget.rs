@@ -2,8 +2,9 @@ use arboard::Clipboard;
 use crossterm::event::{Event, KeyCode, KeyEvent};
 use libmoon::{
     chat::{Chat, ChatUpdate},
+    gateway::GatewayUpdate,
     message::Message,
-    persona::Persona,
+    moon::MoonUpdate,
 };
 use ratatui::{
     layout::{Alignment, Constraint, Layout},
@@ -11,7 +12,6 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, StatefulWidget, Widget, Wrap},
 };
-use tokio::sync::mpsc;
 use tui_widget_list::{ListBuilder, ListState, ListView};
 
 use crate::{
@@ -27,7 +27,9 @@ enum Mode {
 }
 
 pub struct ChatState {
-    chat: Chat,
+    title: String,
+    history: Vec<Message>,
+    structure: Vec<(usize, usize)>,
     input_mode: Mode,
     list_state: ListState,
     editor_state: EditorState,
@@ -36,14 +38,15 @@ pub struct ChatState {
 }
 
 impl ChatState {
-    pub fn load() -> Self {
-        let chat = Chat::load();
+    pub fn new(title: String, history: Vec<Message>, structure: Vec<(usize, usize)>) -> Self {
         let mut list_state = ListState::default();
-        if !chat.get_history().is_empty() {
+        if !history.is_empty() {
             list_state.selected = Some(0);
         }
         ChatState {
-            chat,
+            title,
+            history,
+            structure,
             input_mode: Mode::Normal,
             list_state,
             editor_state: EditorState::default(),
@@ -52,33 +55,24 @@ impl ChatState {
         }
     }
 
-    pub fn set_char(&mut self, char: Persona) {
-        let user = self.chat.user();
-        let settings = self.chat.settings();
-        let tx = self.chat.tx.clone();
-        self.chat = Chat::with_personas(user, char, settings.clone());
-        match self.chat.get_history().is_empty() {
-            true => self.list_state.selected = None,
-            false => self.list_state.selected = Some(0),
-        }
-        self.chat.tx = tx;
-    }
-
-    pub fn get_rx(&mut self) -> mpsc::Receiver<ChatUpdate> {
-        self.chat.get_rx()
-    }
-
-    pub fn update_status(&mut self, status: ChatUpdate) {
+    pub fn update_status(&mut self, status: MoonUpdate) {
         self.status = Some(match status {
-            ChatUpdate::RequestSent => "Waiting",
-            ChatUpdate::RequestOk => "OK",
-            ChatUpdate::StreamUpdate => "Streaming",
-            ChatUpdate::StreamFinished => "Done",
-            ChatUpdate::RequestError(_) => "API Error",
-        })
+            MoonUpdate::CU(cu) => match cu {
+                ChatUpdate::RequestSent => "Waiting",
+                ChatUpdate::RequestOk => "OK",
+                ChatUpdate::StreamUpdate => "Streaming",
+                ChatUpdate::StreamFinished => "Done",
+                ChatUpdate::RequestError(_) => "API Error",
+            },
+            MoonUpdate::GU(gu) => match gu {
+                GatewayUpdate::Char => "Char loaded",
+                GatewayUpdate::User => "User loaded",
+            },
+            MoonUpdate::Error(_) => "Moon Error",
+        });
     }
 
-    pub fn input(&mut self, event: Event) -> AppCommand {
+    pub fn input(&mut self, event: Event, chat: &mut Chat) -> AppCommand {
         self.status = None;
         if let Event::Key(key) = event {
             match &mut self.input_mode {
@@ -87,11 +81,11 @@ impl ChatState {
                     KeyCode::Char('b') => self.borders = !self.borders,
                     KeyCode::Char('s') => return AppCommand::ToggleSelection,
                     KeyCode::Esc => self.input_mode = Mode::Quiting,
-                    _ => self.update(&key),
+                    _ => self.update(&key, chat),
                 },
                 Mode::Inputing => match self.editor_state.input(event) {
                     EditorResult::Ok => {
-                        self.chat.add_user_message(self.editor_state.text());
+                        chat.add_user_message(self.editor_state.text());
                         self.editor_state = EditorState::default();
                         self.input_mode = Mode::Normal;
                     }
@@ -100,8 +94,7 @@ impl ChatState {
                 },
                 Mode::Editing(editor_state) => match editor_state.input(event) {
                     EditorResult::Ok => {
-                        self.chat
-                            .add_edit(self.list_state.selected.unwrap_or(0), editor_state.text());
+                        chat.add_edit(self.list_state.selected.unwrap_or(0), editor_state.text());
                         self.input_mode = Mode::Normal;
                     }
                     EditorResult::Quit => self.input_mode = Mode::Normal,
@@ -116,25 +109,24 @@ impl ChatState {
         AppCommand::None
     }
 
-    pub fn update(&mut self, event: &KeyEvent) {
+    pub fn update(&mut self, event: &KeyEvent, chat: &mut Chat) {
         if let Some(s) = self.list_state.selected {
             match event.code {
-                KeyCode::Char('h') | KeyCode::Left => self.chat.previous(s),
+                KeyCode::Char('h') | KeyCode::Left => chat.previous(s),
                 KeyCode::Char('j') | KeyCode::Down => self.list_state.next(),
                 KeyCode::Char('k') | KeyCode::Up => self.list_state.previous(),
-                KeyCode::Char('l') | KeyCode::Right => self.chat.next(s),
-                KeyCode::Char('y') => self.message_to_clipboard(s),
+                KeyCode::Char('l') | KeyCode::Right => chat.next(s),
+                KeyCode::Char('y') => self.message_to_clipboard(chat, s),
                 KeyCode::Char('d') => {
-                    self.chat.delete(s);
-                    if self.chat.get_history().len() == s {
+                    chat.delete(s);
+                    if chat.get_history().len() == s {
                         self.list_state.previous();
                     }
                 }
                 KeyCode::Char('e') => {
-                    let history = self.chat.get_history();
                     let selected = self.list_state.selected.unwrap_or(0);
-                    if history.len() > selected {
-                        let edit_text = history[selected].text.clone();
+                    if self.history.len() > selected {
+                        let edit_text = self.history[selected].text.clone();
                         self.input_mode =
                             Mode::Editing(Box::new(EditorState::new(edit_text, false)))
                     }
@@ -144,9 +136,9 @@ impl ChatState {
         }
     }
 
-    fn message_to_clipboard(&mut self, depth: usize) {
+    fn message_to_clipboard(&mut self, chat: &Chat, depth: usize) {
         if let Ok(mut clipboard) = Clipboard::new() {
-            let history = self.chat.get_history();
+            let history = chat.get_history();
             match clipboard.set_text(history[depth].clean()) {
                 Ok(_) => self.status = Some("Yanked"),
                 Err(_) => self.status = Some("Copy error"),
@@ -155,14 +147,10 @@ impl ChatState {
     }
 
     fn render_list(&mut self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer) {
-        let messages = self.chat.get_history();
-        let structure = self.chat.get_history_structure();
-
         let builder = ListBuilder::new(|context| {
             let item = Self::paragraph(
-                &messages[context.index],
-                self.chat.owner_name(&messages[context.index]).to_string(),
-                structure[context.index],
+                &self.history[context.index],
+                self.structure[context.index],
                 context.is_selected,
             );
             let main_axis_size = item.line_count(area.width - 2) as u16;
@@ -174,7 +162,7 @@ impl ChatState {
             None => "",
         })
         .alignment(Alignment::Right);
-        let item_count = messages.len();
+        let item_count = self.history.len();
         let borders = match self.borders {
             true => Borders::all(),
             false => Borders::TOP,
@@ -185,25 +173,20 @@ impl ChatState {
             .block(
                 Block::bordered()
                     .borders(borders)
-                    .title(self.chat.title())
+                    .title(self.title.clone())
                     .title(status),
             );
 
         list.render(area, buf, &mut self.list_state);
     }
 
-    fn paragraph(
-        message: &Message,
-        owner: String,
-        structure: (usize, usize),
-        selected: bool,
-    ) -> Paragraph<'_> {
+    fn paragraph(message: &Message, structure: (usize, usize), selected: bool) -> Paragraph<'_> {
         let style = match selected {
             true => Style::new().fg(ratatui::style::Color::Red),
             false => Style::new(),
         };
 
-        let title = Line::from(owner).centered();
+        let title = Line::from("TODO owner name").centered();
         let structure = Line::from(format!("{}/{}", structure.0, structure.1)).right_aligned();
         let mut lines = vec![];
         for l in message.spans() {
