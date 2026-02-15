@@ -60,7 +60,7 @@ impl App {
             terminal.draw(|frame| self.draw(frame))?;
             select! {
                 Some(event) = self.event_stream.next() => self.input(event?),
-                mu = self.moon.recv() => self.chat_state.update_status(mu),
+                mu = self.moon.recv() => self.chat_state.update_status(mu, &self.moon.chat),
             };
 
             if self.exit {
@@ -80,7 +80,7 @@ impl App {
                 self.selector_state = match self.selector_state {
                     Some(_) => None,
                     None => Some(SelectorState::new(
-                        self.moon.gateway.chars.blocking_lock().clone(),
+                        self.moon.gateway.chars.try_lock().unwrap().clone(),
                     )),
                 }
             }

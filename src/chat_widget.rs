@@ -55,7 +55,7 @@ impl ChatState {
         }
     }
 
-    pub fn update_status(&mut self, status: MoonUpdate) {
+    pub fn update_status(&mut self, status: MoonUpdate, chat: &Chat) {
         self.status = Some(match status {
             MoonUpdate::CU(cu) => match cu {
                 ChatUpdate::RequestSent => "Waiting",
@@ -70,6 +70,8 @@ impl ChatState {
             },
             MoonUpdate::Error(_) => "Moon Error",
         });
+        self.history = chat.get_history();
+        self.structure = chat.get_history_structure();
     }
 
     pub fn input(&mut self, event: Event, chat: &mut Chat) -> AppCommand {
@@ -84,11 +86,7 @@ impl ChatState {
                     _ => self.update(&key, chat),
                 },
                 Mode::Inputing => match self.editor_state.input(event) {
-                    EditorResult::Ok => {
-                        chat.add_user_message(self.editor_state.text());
-                        self.editor_state = EditorState::default();
-                        self.input_mode = Mode::Normal;
-                    }
+                    EditorResult::Ok => self.chat_push(chat),
                     EditorResult::Quit => self.input_mode = Mode::Normal,
                     _ => (),
                 },
@@ -96,6 +94,8 @@ impl ChatState {
                     EditorResult::Ok => {
                         chat.add_edit(self.list_state.selected.unwrap_or(0), editor_state.text());
                         self.input_mode = Mode::Normal;
+                        self.update_history(chat);
+                        self.selected_to_last();
                     }
                     EditorResult::Quit => self.input_mode = Mode::Normal,
                     _ => (),
@@ -110,19 +110,14 @@ impl ChatState {
     }
 
     pub fn update(&mut self, event: &KeyEvent, chat: &mut Chat) {
-        if let Some(s) = self.list_state.selected {
+        if let Some(depth) = self.list_state.selected {
             match event.code {
-                KeyCode::Char('h') | KeyCode::Left => chat.previous(s),
+                KeyCode::Char('h') | KeyCode::Left => self.chat_prev(chat, depth),
                 KeyCode::Char('j') | KeyCode::Down => self.list_state.next(),
                 KeyCode::Char('k') | KeyCode::Up => self.list_state.previous(),
-                KeyCode::Char('l') | KeyCode::Right => chat.next(s),
-                KeyCode::Char('y') => self.message_to_clipboard(chat, s),
-                KeyCode::Char('d') => {
-                    chat.delete(s);
-                    if chat.get_history().len() == s {
-                        self.list_state.previous();
-                    }
-                }
+                KeyCode::Char('l') | KeyCode::Right => self.chat_next(chat, depth),
+                KeyCode::Char('y') => self.message_to_clipboard(chat, depth),
+                KeyCode::Char('d') => self.chat_delete(chat, depth),
                 KeyCode::Char('e') => {
                     let selected = self.list_state.selected.unwrap_or(0);
                     if self.history.len() > selected {
@@ -133,6 +128,42 @@ impl ChatState {
                 }
                 _ => (),
             }
+        }
+    }
+
+    fn chat_push(&mut self, chat: &mut Chat) {
+        chat.add_user_message(self.editor_state.text());
+        self.editor_state = EditorState::default();
+        self.input_mode = Mode::Normal;
+        self.update_history(chat);
+        self.selected_to_last();
+    }
+
+    fn chat_next(&mut self, chat: &mut Chat, depth: usize) {
+        chat.next(depth);
+        self.update_history(chat);
+    }
+
+    fn chat_prev(&mut self, chat: &mut Chat, depth: usize) {
+        chat.previous(depth);
+        self.update_history(chat);
+    }
+
+    fn chat_delete(&mut self, chat: &mut Chat, depth: usize) {
+        chat.delete(depth);
+        self.update_history(chat);
+        self.selected_to_last();
+    }
+
+    fn update_history(&mut self, chat: &Chat) {
+        self.history = chat.get_history();
+        self.structure = chat.get_history_structure();
+    }
+
+    fn selected_to_last(&mut self) {
+        self.list_state.selected = match self.history.len() {
+            0 => None,
+            x => Some(x - 1),
         }
     }
 
