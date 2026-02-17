@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crossterm::event::{Event, KeyCode};
 use libmoon::persona::Persona;
 use ratatui::{
@@ -5,6 +7,7 @@ use ratatui::{
     style::Style,
     widgets::{Block, Borders, Paragraph, StatefulWidget},
 };
+use tokio::sync::Mutex;
 use tui_widget_list::{ListBuilder, ListState, ListView};
 
 use crate::{
@@ -13,8 +16,8 @@ use crate::{
 };
 
 pub struct SelectorState {
-    personas: Vec<Persona>,
-    filtered_personas: Vec<Persona>,
+    personas: Arc<Mutex<Vec<Persona>>>,
+    filtered_names: Vec<String>,
     list_state: ListState,
 
     searching: bool,
@@ -22,13 +25,17 @@ pub struct SelectorState {
 }
 
 impl SelectorState {
-    pub fn new(personas: Vec<Persona>) -> Self {
+    pub fn new(personas: Arc<Mutex<Vec<Persona>>>) -> Self {
         let mut list_state = ListState::default();
-        if !personas.is_empty() {
+        let names = match personas.try_lock() {
+            Ok(p) => p.iter().map(|p| p.name().to_string()).collect(),
+            Err(_) => vec![],
+        };
+        if !names.is_empty() {
             list_state.selected = Some(0)
         }
         SelectorState {
-            filtered_personas: personas.clone(),
+            filtered_names: names,
             personas,
             list_state,
             searching: false,
@@ -45,16 +52,17 @@ impl SelectorState {
                     _ => (),
                 }
                 let text = self.search_bar.text().to_lowercase().trim().to_string();
-                self.filtered_personas = self
-                    .personas
-                    .iter()
-                    .filter(|s| {
-                        s.name().to_lowercase().contains(&text)
-                            | s.system_prompt(None).to_lowercase().contains(&text)
-                    })
-                    .cloned()
-                    .collect();
-                match self.filtered_personas.is_empty() {
+                if let Ok(personas) = self.personas.try_lock() {
+                    self.filtered_names = personas
+                        .iter()
+                        .filter(|s| {
+                            s.name().to_lowercase().contains(&text)
+                                | s.system_prompt(None).to_lowercase().contains(&text)
+                        })
+                        .map(|p| p.name().to_string())
+                        .collect();
+                }
+                match self.filtered_names.is_empty() {
                     true => self.list_state.selected = None,
                     false => self.list_state.selected = Some(0),
                 }
@@ -76,9 +84,9 @@ impl SelectorState {
                             KeyCode::Char('j') => self.list_state.next(),
                             KeyCode::Char('k') => self.list_state.previous(),
                             KeyCode::Enter => {
-                                return AppCommand::CharSelection(
-                                    self.filtered_personas[selected].clone(),
-                                );
+                                if let Some(p) = self.input_ok(selected) {
+                                    return AppCommand::CharSelection(p);
+                                }
                             }
                             _ => (),
                         }
@@ -87,6 +95,14 @@ impl SelectorState {
             }
         };
         AppCommand::None
+    }
+    fn input_ok(&self, selected: usize) -> Option<Persona> {
+        for p in self.personas.blocking_lock().iter() {
+            if self.filtered_names[selected] == p.name() {
+                return Some(p.clone());
+            }
+        }
+        None
     }
 }
 
@@ -110,12 +126,12 @@ impl StatefulWidget for SelectorWidget {
                 false => Style::new(),
             };
 
-            let item = Paragraph::new(state.filtered_personas[context.index].name())
+            let item = Paragraph::new(state.filtered_names[context.index].clone())
                 .block(Block::bordered().borders(Borders::TOP))
                 .style(style);
             (item, 3)
         });
-        let list = ListView::new(builder, state.filtered_personas.len())
+        let list = ListView::new(builder, state.filtered_names.len())
             .scroll_axis(tui_widget_list::ScrollAxis::Vertical)
             .block(Block::bordered().title("Character selector"));
         list.render(personas_area, buf, &mut state.list_state);

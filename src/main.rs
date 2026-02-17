@@ -79,9 +79,7 @@ impl App {
             AppCommand::ToggleSelection => {
                 self.selector_state = match self.selector_state {
                     Some(_) => None,
-                    None => Some(SelectorState::new(
-                        self.moon.gateway.chars.try_lock().unwrap().clone(),
-                    )),
+                    None => Some(SelectorState::new(self.moon.gateway.chars.clone())),
                 }
             }
             AppCommand::CharSelection(persona) => {
