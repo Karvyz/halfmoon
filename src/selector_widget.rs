@@ -43,7 +43,7 @@ impl SelectorState {
         }
     }
 
-    pub fn handle_input(&mut self, event: Event) -> AppCommand {
+    pub async fn handle_input(&mut self, event: Event) -> AppCommand {
         match self.searching {
             true => {
                 match self.search_bar.input(event) {
@@ -52,16 +52,17 @@ impl SelectorState {
                     _ => (),
                 }
                 let text = self.search_bar.text().to_lowercase().trim().to_string();
-                if let Ok(personas) = self.personas.try_lock() {
-                    self.filtered_names = personas
-                        .iter()
-                        .filter(|s| {
-                            s.name().to_lowercase().contains(&text)
-                                | s.system_prompt(None).to_lowercase().contains(&text)
-                        })
-                        .map(|p| p.name().to_string())
-                        .collect();
-                }
+                self.filtered_names = self
+                    .personas
+                    .lock()
+                    .await
+                    .iter()
+                    .filter(|s| {
+                        s.name().to_lowercase().contains(&text)
+                            | s.system_prompt(None).to_lowercase().contains(&text)
+                    })
+                    .map(|p| p.name().to_string())
+                    .collect();
                 match self.filtered_names.is_empty() {
                     true => self.list_state.selected = None,
                     false => self.list_state.selected = Some(0),
@@ -84,7 +85,7 @@ impl SelectorState {
                             KeyCode::Char('j') => self.list_state.next(),
                             KeyCode::Char('k') => self.list_state.previous(),
                             KeyCode::Enter => {
-                                if let Some(p) = self.input_ok(selected) {
+                                if let Some(p) = self.input_ok(selected).await {
                                     return AppCommand::CharSelection(p);
                                 }
                             }
@@ -96,8 +97,9 @@ impl SelectorState {
         };
         AppCommand::None
     }
-    fn input_ok(&self, selected: usize) -> Option<Persona> {
-        for p in self.personas.blocking_lock().iter() {
+
+    async fn input_ok(&self, selected: usize) -> Option<Persona> {
+        for p in self.personas.lock().await.iter() {
             if self.filtered_names[selected] == p.name() {
                 return Some(p.clone());
             }

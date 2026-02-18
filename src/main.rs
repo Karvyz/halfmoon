@@ -59,7 +59,7 @@ impl App {
         loop {
             terminal.draw(|frame| self.draw(frame))?;
             select! {
-                Some(event) = self.event_stream.next() => self.input(event?),
+                Some(event) = self.event_stream.next() => self.input(event?).await,
                 mu = self.moon.recv() => self.chat_state.update_status(mu, &self.moon.chat),
             };
 
@@ -69,9 +69,9 @@ impl App {
         }
     }
 
-    fn input(&mut self, event: Event) {
+    async fn input(&mut self, event: Event) {
         let command = match &mut self.selector_state {
-            Some(selector_state) => selector_state.handle_input(event),
+            Some(selector_state) => selector_state.handle_input(event).await,
             None => self.chat_state.input(event, &mut self.moon.chat),
         };
 
