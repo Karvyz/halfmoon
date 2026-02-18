@@ -84,6 +84,7 @@ impl App {
             }
             AppCommand::CharSelection(persona) => {
                 self.moon.set_chars(persona);
+                self.chat_state.update_list(&self.moon.chat);
                 self.selector_state = None;
             }
             AppCommand::Quit => self.exit = true,

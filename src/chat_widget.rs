@@ -131,6 +131,11 @@ impl ChatState {
         }
     }
 
+    pub fn update_list(&mut self, chat: &Chat) {
+        self.update_history(chat);
+        self.selected_to_last();
+    }
+
     fn chat_push(&mut self, chat: &mut Chat) {
         chat.add_user_message(self.editor_state.text());
         self.editor_state = EditorState::default();
